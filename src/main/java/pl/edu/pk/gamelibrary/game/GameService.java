@@ -1,14 +1,16 @@
 package pl.edu.pk.gamelibrary.game;
 
 import jakarta.transaction.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import pl.edu.pk.gamelibrary.events.GameDeletedEvent;
+import pl.edu.pk.gamelibrary.events.listener.RatingStatsCache;
 import pl.edu.pk.gamelibrary.exception.ResourceNotFoundException;
-import pl.edu.pk.gamelibrary.library.UserGameRepository;
 import pl.edu.pk.gamelibrary.review.RatingProfile;
 import pl.edu.pk.gamelibrary.review.ReviewRepository;
 
@@ -21,8 +23,9 @@ import java.util.Map;
 public class GameService {
 
     private final GameRepository gameRepository;
-    private final UserGameRepository userGameRepository;
     private final ReviewRepository reviewRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final RatingStatsCache ratingStatsCache;
 
     // Bayesian average parameters:
     // C = prior count (confidence), M = prior mean (global prior)
@@ -30,11 +33,13 @@ public class GameService {
     private static final double BAYES_M = 7.0;
 
     public GameService(GameRepository gameRepository,
-                       UserGameRepository userGameRepository,
-                       ReviewRepository reviewRepository) {
+                       ReviewRepository reviewRepository,
+                       ApplicationEventPublisher eventPublisher,
+                       RatingStatsCache ratingStatsCache) {
         this.gameRepository = gameRepository;
-        this.userGameRepository = userGameRepository;
         this.reviewRepository = reviewRepository;
+        this.eventPublisher = eventPublisher;
+        this.ratingStatsCache = ratingStatsCache;
     }
 
     public List<Game> getAllGames() {
@@ -54,7 +59,8 @@ public class GameService {
     }
 
     /**
-     * Pobiera mapę gameId -> GameRatingStats dla wszystkich gier (jeden zapyt do DB).
+     * Pobiera mapę gameId -> GameRatingStats dla wszystkich gier.
+     * Wynik jest cachowany w RatingStatsCache i unieważniany przez eventy recenzji.
      */
     public Map<Long, GameRatingStats> getAllRatingStats() {
         List<Object[]> rows = reviewRepository.findReviewStatsPerGame();
@@ -64,14 +70,19 @@ public class GameService {
             long count   = ((Number) row[1]).longValue();
             double avg   = row[2] != null ? ((Number) row[2]).doubleValue() : 0.0;
             double bayesRaw = computeBayesian(count, avg);
-            map.put(gameId, new GameRatingStats(count, round1(avg), round1(bayesRaw), bayesRaw));
+            GameRatingStats stats = new GameRatingStats(count, round1(avg), round1(bayesRaw), bayesRaw);
+            map.put(gameId, stats);
+            ratingStatsCache.put(gameId, stats);
         }
         return map;
     }
 
     public GameRatingStats getRatingStatsForGame(Long gameId) {
-        Map<Long, GameRatingStats> all = getAllRatingStats();
-        return all.getOrDefault(gameId, GameRatingStats.empty());
+        // Sprawdź cache przed pójściem do bazy
+        return ratingStatsCache.get(gameId).orElseGet(() -> {
+            Map<Long, GameRatingStats> all = getAllRatingStats();
+            return all.getOrDefault(gameId, GameRatingStats.empty());
+        });
     }
 
     public Game getGameById(Long id) {
@@ -102,12 +113,17 @@ public class GameService {
         return gameRepository.save(existing);
     }
 
+    /**
+     * Usuwa grę i publikuje GameDeletedEvent.
+     *
+     * Czyszczenie powiązanych recenzji i wpisów w bibliotekach
+     * odbywa się w GameEventListener (BEFORE_COMMIT) — w tej samej
+     * transakcji, więc albo wszystko się wykona, albo nic.
+     */
     @Transactional
     public void deleteGame(Long id) {
         Game game = getGameById(id);
-        userGameRepository.findAll((root, query, cb) ->
-            cb.equal(root.get("game"), game)
-        ).forEach(userGameRepository::delete);
+        eventPublisher.publishEvent(new GameDeletedEvent(game.getId(), game.getTitle()));
         gameRepository.deleteById(id);
     }
 
@@ -117,13 +133,10 @@ public class GameService {
 
     private Page<Game> searchGamesSortedByRating(GameSearchCriteria criteria, Pageable pageable) {
         Specification<Game> spec = GameSpecifications.byCriteria(criteria);
-        // Pobierz wszystkie pasujące gry (bez paginacji, bez sortowania DB)
         List<Game> allGames = gameRepository.findAll(spec);
         Map<Long, GameRatingStats> statsMap = getAllRatingStats();
 
         Sort.Direction dir = extractSortDirection(pageable);
-        // Gry bez recenzji zawsze na końcu; używamy surowej (niezaokrąglonej) wartości Bayesian
-        // żeby uniknąć remisów po zaokrągleniu (np. 8.17 vs 8.25 oba zaokrąglone do 8.2).
         Comparator<Game> comparator;
         if (dir == Sort.Direction.DESC) {
             comparator = Comparator.comparingInt(
@@ -141,7 +154,6 @@ public class GameService {
 
         List<Game> sorted = allGames.stream().sorted(comparator).toList();
 
-        // Ręczna paginacja
         int totalElements = sorted.size();
         int pageNum = pageable.getPageNumber();
         int pageSize = pageable.getPageSize();

@@ -1,6 +1,7 @@
 package pl.edu.pk.gamelibrary.review;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
@@ -27,4 +28,8 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     @Query("SELECT r.game.id as gameId, COUNT(r) as reviewCount, AVG(r.overallScore) as avgScore FROM Review r GROUP BY r.game.id")
     List<Object[]> findReviewStatsPerGame();
+
+    @Modifying
+    @Query("DELETE FROM Review r WHERE r.game.id = :gameId")
+    long deleteByGameId(@Param("gameId") Long gameId);
 }

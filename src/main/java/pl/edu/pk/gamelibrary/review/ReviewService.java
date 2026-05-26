@@ -1,16 +1,19 @@
 package pl.edu.pk.gamelibrary.review;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pl.edu.pk.gamelibrary.auth.model.AppUser;
 import pl.edu.pk.gamelibrary.auth.repository.UserRepository;
+import pl.edu.pk.gamelibrary.events.ReviewCreatedEvent;
+import pl.edu.pk.gamelibrary.events.ReviewDeletedEvent;
 import pl.edu.pk.gamelibrary.exception.ResourceNotFoundException;
 import pl.edu.pk.gamelibrary.game.Game;
 import pl.edu.pk.gamelibrary.game.GameRepository;
-import pl.edu.pk.gamelibrary.review.RatingProfile;
-import pl.edu.pk.gamelibrary.review.dto.ReviewRequest;
 import pl.edu.pk.gamelibrary.review.dto.GameRatingStatsResponse;
+import pl.edu.pk.gamelibrary.review.dto.ReviewRequest;
 import pl.edu.pk.gamelibrary.util.RatingCalculator;
 
 import java.util.LinkedHashMap;
@@ -23,20 +26,18 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final GameRepository gameRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReviewService(ReviewRepository reviewRepository,
                          GameRepository gameRepository,
-                         UserRepository userRepository) {
+                         UserRepository userRepository,
+                         ApplicationEventPublisher eventPublisher) {
         this.reviewRepository = reviewRepository;
         this.gameRepository = gameRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
-    /**
-     * Zwraca wszystkie recenzje dla danej gry.
-     *
-     * @throws ResourceNotFoundException gdy gra nie istnieje
-     */
     public List<Review> getReviewsByGame(Long gameId) {
         if (!gameRepository.existsById(gameId)) {
             throw new ResourceNotFoundException("Gra", gameId);
@@ -51,28 +52,15 @@ public class ReviewService {
         return reviewRepository.findByGameId(gameId, pageable);
     }
 
-    /**
-     * Zwraca recenzję po id.
-     *
-     * @throws ResourceNotFoundException gdy recenzja nie istnieje
-     */
     public Review getReviewById(Long id) {
         return reviewRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Recenzja", id));
     }
 
     /**
-     * Tworzy nową recenzję gry.
-     *
-     * Zasady biznesowe:
-     *  - gra musi istnieć
-     *  - autor musi istnieć
-     *  - jeden użytkownik może wystawić tylko jedną recenzję danej gry
-     *
-     * @throws ResourceNotFoundException  gdy gra lub użytkownik nie istnieje
-     * @throws IllegalArgumentException   gdy użytkownik już wystawił recenzję tej gry
-     *                                    lub gdy ocena jest poza zakresem 1–10
+     * Tworzy nową recenzję i publikuje ReviewCreatedEvent po commicie transakcji.
      */
+    @Transactional
     public Review createReview(ReviewRequest request, Long authorId) {
         Game game = gameRepository.findById(request.getGameId())
                 .orElseThrow(() -> new ResourceNotFoundException("Gra", request.getGameId()));
@@ -94,18 +82,20 @@ public class ReviewService {
         review.setRatingProfile(profile);
         review.recalculateOverallScore();
 
-        return reviewRepository.save(review);
+        Review saved = reviewRepository.save(review);
+
+        // Publikujemy event — listener unieważni cache statystyk po commicie
+        eventPublisher.publishEvent(
+                new ReviewCreatedEvent(game.getId(), saved.getId(), authorId, saved.getOverallScore())
+        );
+
+        return saved;
     }
 
     /**
-     * Aktualizuje istniejącą recenzję.
-     *
-     * Tylko autor recenzji może ją edytować.
-     *
-     * @throws ResourceNotFoundException  gdy recenzja nie istnieje
-     * @throws IllegalArgumentException   gdy próbuje edytować inny użytkownik
-     *                                    lub gdy ocena jest poza zakresem 1–10
+     * Aktualizuje recenzję. Też unieważniamy cache bo ocena mogła się zmienić.
      */
+    @Transactional
     public Review updateReview(Long reviewId, ReviewRequest request, Long authorId) {
         Review existing = getReviewById(reviewId);
 
@@ -127,17 +117,20 @@ public class ReviewService {
         existing.setRatingProfile(profile);
         existing.recalculateOverallScore();
 
-        return reviewRepository.save(existing);
+        Review saved = reviewRepository.save(existing);
+
+        // Ocena się zmieniła — cache statystyk nieaktualny
+        eventPublisher.publishEvent(
+                new ReviewCreatedEvent(saved.getGame().getId(), saved.getId(), authorId, saved.getOverallScore())
+        );
+
+        return saved;
     }
 
     /**
-     * Usuwa recenzję.
-     *
-     * Tylko autor może usunąć własną recenzję.
-     *
-     * @throws ResourceNotFoundException  gdy recenzja nie istnieje
-     * @throws IllegalArgumentException   gdy próbuje usunąć inny użytkownik
+     * Usuwa recenzję i publikuje ReviewDeletedEvent po commicie.
      */
+    @Transactional
     public void deleteReview(Long reviewId, Long authorId) {
         Review existing = getReviewById(reviewId);
 
@@ -146,21 +139,18 @@ public class ReviewService {
                     "Brak uprawnień do usunięcia recenzji id=" + reviewId);
         }
 
+        Long gameId = existing.getGame().getId();
+
         reviewRepository.deleteById(reviewId);
+
+        eventPublisher.publishEvent(new ReviewDeletedEvent(gameId, reviewId, authorId));
     }
 
-    /**
-     * Zwraca średnią ocenę ogólną gry na podstawie wszystkich recenzji.
-     *
-     * @return średnia lub 0.0 gdy brak recenzji
-     * @throws ResourceNotFoundException gdy gra nie istnieje
-     */
     public double getAverageScoreForGame(Long gameId) {
         if (!gameRepository.existsById(gameId)) {
             throw new ResourceNotFoundException("Gra", gameId);
         }
-        return reviewRepository.findAverageOverallScoreByGameId(gameId)
-                .orElse(0.0);
+        return reviewRepository.findAverageOverallScoreByGameId(gameId).orElse(0.0);
     }
 
     public GameRatingStatsResponse getRatingStatsForGame(Long gameId) {
@@ -189,22 +179,14 @@ public class ReviewService {
     // ──────────────────────────────────────────────
 
     private RatingProfile resolveProfileForCreate(Game game, ReviewRequest req) {
-        if (req.getRatingProfile() != null) {
-            return req.getRatingProfile();
-        }
-        if (game.getDefaultRatingProfile() != null) {
-            return game.getDefaultRatingProfile();
-        }
+        if (req.getRatingProfile() != null) return req.getRatingProfile();
+        if (game.getDefaultRatingProfile() != null) return game.getDefaultRatingProfile();
         return RatingProfile.DEFAULT;
     }
 
     private RatingProfile resolveProfileForUpdate(Review existing, ReviewRequest req) {
-        if (req.getRatingProfile() != null) {
-            return req.getRatingProfile();
-        }
-        if (existing.getRatingProfile() != null) {
-            return existing.getRatingProfile();
-        }
+        if (req.getRatingProfile() != null) return req.getRatingProfile();
+        if (existing.getRatingProfile() != null) return existing.getRatingProfile();
         Game game = existing.getGame();
         return game != null && game.getDefaultRatingProfile() != null
                 ? game.getDefaultRatingProfile()
@@ -243,9 +225,7 @@ public class ReviewService {
 
     private Map<Integer, Long> buildOverallHistogram(List<Review> reviews) {
         Map<Integer, Long> histogram = new LinkedHashMap<>();
-        for (int i = 1; i <= 10; i++) {
-            histogram.put(i, 0L);
-        }
+        for (int i = 1; i <= 10; i++) histogram.put(i, 0L);
         for (Review r : reviews) {
             Double score = r.getOverallScore();
             if (score == null) continue;
