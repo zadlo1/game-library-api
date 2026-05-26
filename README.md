@@ -8,15 +8,16 @@ Aplikacja umożliwia przeglądanie i zarządzanie kolekcją gier z podziałem na
 
 ## 🛠️ Stack technologiczny
 
-| Warstwa     | Technologia                        |
-|-------------|------------------------------------|
-| Backend     | Java 17, Spring Boot 3.4.4         |
-| Persistence | Spring Data JPA, H2 (in-memory)    |
-| Security    | Spring Security, JWT (JJWT 0.12.6) |
-| Walidacja   | Jakarta Validation                 |
-| Testy       | JUnit 5, Mockito                   |
-| Build       | Maven (Maven Wrapper)              |
-| Frontend    | Angular 17                         |
+| Warstwa     | Technologia                                               |
+|-------------|-----------------------------------------------------------|
+| Backend     | Java 17, Spring Boot 3.4.4                                |
+| Persistence | Spring Data JPA, H2 (in-memory)                           |
+| Security    | Spring Security, JWT (JJWT 0.12.6)                        |
+| Eventy      | Spring Application Events (`@TransactionalEventListener`) |
+| Walidacja   | Jakarta Validation                                        |
+| Testy       | JUnit 5, Mockito                                          |
+| Build       | Maven (Maven Wrapper)                                     |
+| Frontend    | Angular 17                                                |
 
 ---
 
@@ -266,6 +267,34 @@ Dostępne statusy: `PLAYING`, `COMPLETED`, `DROPPED`, `PLAN_TO_PLAY`, `ON_HOLD`.
 
 ---
 
+
+## 📨 Architektura eventowa
+
+Aplikacja wykorzystuje Spring Application Events do luźnego wiązania modułów. Zamiast bezpośrednich zależności między serwisami, moduły komunikują się przez zdarzenia domenowe.
+
+### Zdarzenia domenowe
+
+| Zdarzenie             | Publikuje        | Nasłuchuje                         | Faza                  |
+|-----------------------|------------------|------------------------------------|-----------------------|
+| `GameDeletedEvent`    | `GameService`    | `GameEventListener`, `AuditEventListener` | `AFTER_COMMIT`  |
+| `ReviewCreatedEvent`  | `ReviewService`  | `ReviewEventListener`, `AuditEventListener` | `AFTER_COMMIT` |
+| `ReviewDeletedEvent`  | `ReviewService`  | `ReviewEventListener`, `AuditEventListener` | `AFTER_COMMIT` |
+| `UserRegisteredEvent` | `AuthService`    | `AuditEventListener`               | `AFTER_COMMIT`        |
+
+### Listenery
+
+- **`GameEventListener`** — po usunięciu gry czyści powiązane recenzje i wpisy w bibliotekach użytkowników; używa `REQUIRES_NEW`, żeby działać w osobnej transakcji po commicie
+- **`ReviewEventListener`** — unieważnia cache statystyk ratingowych gdy recenzja zostaje dodana lub usunięta
+- **`AuditEventListener`** — centralny audit log; loguje każde zdarzenie domenowe (bez modyfikacji żadnego serwisu)
+- **`RatingStatsCache`** — prosty in-memory cache (`ConcurrentHashMap`) statystyk ratingowych per gra, unieważniany przez eventy
+
+> **Dlaczego `AFTER_COMMIT` a nie `BEFORE_COMMIT`?**  
+> `BEFORE_COMMIT` oznacza, że listener wykonuje się zanim transakcja „nadrzędna" zostanie scommitowana.  
+> Cleanup powiązanych danych (recenzje, biblioteki) wymaga nowej transakcji — dlatego `AFTER_COMMIT` + `REQUIRES_NEW`.  
+> Spring od wersji 6.x zabrania używania `@Transactional` na metodzie `@TransactionalEventListener` z propagacją inną niż `REQUIRES_NEW` lub `NOT_SUPPORTED`.
+
+---
+
 ## 🏗️ Struktura projektu
 
 ```
@@ -295,6 +324,18 @@ src/
 │   │   ├── ReviewRepository.java
 │   │   ├── ReviewService.java
 │   │   └── RatingProfile.java
+│   ├── config/
+│   │   └── AsyncConfig.java  # Konfiguracja async dla eventów
+│   ├── events/
+│   │   ├── GameDeletedEvent.java
+│   │   ├── ReviewCreatedEvent.java
+│   │   ├── ReviewDeletedEvent.java
+│   │   ├── UserRegisteredEvent.java
+│   │   └── listener/
+│   │       ├── GameEventListener.java
+│   │       ├── ReviewEventListener.java
+│   │       ├── AuditEventListener.java
+│   │       └── RatingStatsCache.java
 │   ├── security/         # JwtAuthFilter, JwtService, SecurityConfig
 │   └── util/             # RatingCalculator, Criterion
 └── test/
