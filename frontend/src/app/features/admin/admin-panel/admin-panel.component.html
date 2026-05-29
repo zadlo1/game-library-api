@@ -1,0 +1,42 @@
+<div class="page-container">
+  <h1>Panel Administratora</h1>
+  <p class="subtitle">Zarządzaj użytkownikami systemu</p>
+
+  <div class="users-table" *ngIf="!loading && !error">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nazwa użytkownika</th>
+          <th>Rola</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let user of users">
+          <td>{{ user.id }}</td>
+          <td>{{ user.username }}</td>
+          <td><span [class]="'role-badge ' + user.role.toLowerCase()">{{ user.role }}</span></td>
+          <td>
+            <button class="btn-ban" (click)="deleteUser(user)" [disabled]="user.role === 'ADMIN'">
+              🚫 Zbanuj
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="empty-state" *ngIf="users.length === 0">
+      <p>Brak użytkowników w systemie.</p>
+    </div>
+  </div>
+
+  <div class="loading-state" *ngIf="loading">
+    <div class="spinner"></div>
+    <p>Wczytywanie użytkowników...</p>
+  </div>
+
+  <div class="error-state" *ngIf="error">
+    <p>⚠️ {{ error }}</p>
+  </div>
+</div>

@@ -155,9 +155,11 @@
           <span *ngIf="r.storyScore"><strong>Fabuła:</strong> {{ r.storyScore }}/10</span>
           <span><strong>Regrywalność:</strong> {{ r.replayValueScore }}/10</span>
         </div>
-        <div class="review-actions" *ngIf="isLoggedIn">
-          <button class="btn-sm-edit" (click)="editReview(r)">✏️ Edytuj</button>
-          <button class="btn-sm-del" (click)="deleteReview(r.id)">🗑️ Usuń</button>
+        <div class="review-actions">
+          <button *ngIf="canEditReview(r)" class="btn-sm-edit" (click)="editReview(r)">✏️ Edytuj</button>
+          <button *ngIf="canDeleteReview(r) && !isAdmin" class="btn-sm-del" (click)="deleteReview(r.id)">🗑️ Usuń</button>
+          <button *ngIf="isAdmin && r.authorUsername !== currentUsername" class="btn-sm-del" (click)="deleteReviewAsAdmin(r.id)">🗑️ Usuń (admin)</button>
+          <button *ngIf="isAdmin" class="btn-sm-ban" (click)="banUser(r)">🚫 Zbanuj użytkownika</button>
         </div>
       </div>
 

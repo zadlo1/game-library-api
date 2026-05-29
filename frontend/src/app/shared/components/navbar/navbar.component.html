@@ -16,6 +16,7 @@
       <ng-container *ngIf="isLoggedIn$ | async">
         <a routerLink="/library" routerLinkActive="active" (click)="menuOpen=false">Moja biblioteka</a>
         <a *ngIf="isAdmin" routerLink="/games/new" routerLinkActive="active" (click)="menuOpen=false">+ Dodaj grę</a>
+        <a *ngIf="isAdmin" routerLink="/admin" routerLinkActive="active" (click)="menuOpen=false">⚙️ Panel administratora</a>
       </ng-container>
     </div>
     <div class="nav-actions">

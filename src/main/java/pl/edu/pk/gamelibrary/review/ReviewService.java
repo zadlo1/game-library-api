@@ -146,6 +146,20 @@ public class ReviewService {
         eventPublisher.publishEvent(new ReviewDeletedEvent(gameId, reviewId, authorId));
     }
 
+    /**
+     * Usuwa recenzję przez admina (bez sprawdzania autorstwa).
+     */
+    @Transactional
+    public void deleteReviewByAdmin(Long reviewId) {
+        Review existing = getReviewById(reviewId);
+        Long gameId = existing.getGame().getId();
+        Long authorId = existing.getAuthor().getId();
+
+        reviewRepository.deleteById(reviewId);
+
+        eventPublisher.publishEvent(new ReviewDeletedEvent(gameId, reviewId, authorId));
+    }
+
     public double getAverageScoreForGame(Long gameId) {
         if (!gameRepository.existsById(gameId)) {
             throw new ResourceNotFoundException("Gra", gameId);

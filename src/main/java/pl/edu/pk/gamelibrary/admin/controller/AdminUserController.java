@@ -10,10 +10,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.edu.pk.gamelibrary.admin.dto.AdminCreateUserRequest;
+import pl.edu.pk.gamelibrary.admin.dto.UserListResponse;
 import pl.edu.pk.gamelibrary.auth.dto.AuthResponse;
+import pl.edu.pk.gamelibrary.auth.model.AppUser;
 import pl.edu.pk.gamelibrary.auth.model.Role;
+import pl.edu.pk.gamelibrary.auth.repository.UserRepository;
 import pl.edu.pk.gamelibrary.auth.service.AuthService;
 import pl.edu.pk.gamelibrary.exception.ErrorResponse;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Tag(name = "Admin", description = "Zarządzanie użytkownikami (tylko ADMIN)")
 @RestController
@@ -21,9 +27,27 @@ import pl.edu.pk.gamelibrary.exception.ErrorResponse;
 public class AdminUserController {
 
     private final AuthService authService;
+    private final UserRepository userRepository;
 
-    public AdminUserController(AuthService authService) {
+    public AdminUserController(AuthService authService, UserRepository userRepository) {
         this.authService = authService;
+        this.userRepository = userRepository;
+    }
+
+    @Operation(summary = "Lista wszystkich użytkowników",
+               description = "Endpoint dostępny tylko dla administratorów.",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Lista użytkowników"),
+        @ApiResponse(responseCode = "401", description = "Brak tokenu JWT"),
+        @ApiResponse(responseCode = "403", description = "Brak roli ADMIN")
+    })
+    @GetMapping
+    public ResponseEntity<List<UserListResponse>> getAllUsers() {
+        List<UserListResponse> users = userRepository.findAll().stream()
+                .map(u -> new UserListResponse(u.getId(), u.getUsername(), u.getRole().name()))
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(users);
     }
 
     @Operation(summary = "Utwórz użytkownika z wybraną rolą",
@@ -53,6 +77,26 @@ public class AdminUserController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(new ErrorResponse(409, e.getMessage()));
+        }
+    }
+
+    @Operation(summary = "Usuń użytkownika (ban)",
+               description = "Endpoint dostępny tylko dla administratorów. Usuwa użytkownika wraz z jego recenzjami i biblioteką gier.",
+               security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Użytkownik usunięty"),
+        @ApiResponse(responseCode = "401", description = "Brak tokenu JWT"),
+        @ApiResponse(responseCode = "403", description = "Brak roli ADMIN"),
+        @ApiResponse(responseCode = "404", description = "Użytkownik nie istnieje")
+    })
+    @DeleteMapping("/{userId}")
+    public ResponseEntity<?> deleteUser(@PathVariable Long userId) {
+        try {
+            authService.deleteUser(userId);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, e.getMessage()));
         }
     }
 }

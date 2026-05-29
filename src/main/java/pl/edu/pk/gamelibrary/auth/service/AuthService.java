@@ -95,4 +95,17 @@ public class AuthService {
         String token = jwtService.generateToken(user.getUsername(), user.getRole().name());
         return new AuthResponse(token, user.getUsername(), user.getRole().name());
     }
+
+    /**
+     * Usuwa użytkownika (przez admina).
+     * Dzięki kaskadowemu usuwaniu w encji AppUser, wszystkie powiązane recenzje
+     * i wpisy UserGame zostaną automatycznie usunięte.
+     */
+    @Transactional
+    public void deleteUser(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new IllegalArgumentException("Użytkownik o id=" + userId + " nie istnieje");
+        }
+        userRepository.deleteById(userId);
+    }
 }

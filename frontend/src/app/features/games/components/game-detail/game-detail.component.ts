@@ -4,6 +4,7 @@ import { GameService } from '../../../../core/services/game.service';
 import { ReviewService } from '../../../../core/services/review.service';
 import { LibraryService } from '../../../../core/services/library.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { UserService } from '../../../../core/services/user.service';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { GameResponse, ReviewResponse, GameRatingStats, LibraryStatus } from '../../../../core/models';
 import { forkJoin } from 'rxjs';
@@ -25,6 +26,7 @@ export class GameDetailComponent implements OnInit {
 
   isLoggedIn = false;
   isAdmin = false;
+  currentUsername = '';
   showReviewForm = false;
   reviewForm!: FormGroup;
   reviewError = '';
@@ -48,12 +50,14 @@ export class GameDetailComponent implements OnInit {
     private reviewService: ReviewService,
     private libraryService: LibraryService,
     private auth: AuthService,
+    private userService: UserService,
     private fb: FormBuilder
   ) {}
 
   ngOnInit() {
     this.isLoggedIn = !!this.auth.getToken();
     this.isAdmin = this.auth.isAdmin();
+    this.currentUsername = this.auth.getUsername() || '';
     const id = Number(this.route.snapshot.paramMap.get('id'));
     this.loadAll(id);
     this.initReviewForm();
@@ -142,7 +146,35 @@ export class GameDetailComponent implements OnInit {
 
   deleteReview(id: number) {
     if (!confirm('Usunąć recenzję?')) return;
-    this.reviewService.delete(id).subscribe(() => this.loadReviews(0));
+    this.reviewService.delete(id).subscribe(() => {
+      this.loadReviews(0);
+      if (this.game) this.reviewService.getStats(this.game.id).subscribe(s => this.stats = s);
+    });
+  }
+
+  deleteReviewAsAdmin(id: number) {
+    if (!confirm('Usunąć tę recenzję (jako admin)?')) return;
+    this.reviewService.deleteByAdmin(id).subscribe(() => {
+      this.loadReviews(0);
+      if (this.game) this.reviewService.getStats(this.game.id).subscribe(s => this.stats = s);
+    });
+  }
+
+  banUser(review: ReviewResponse) {
+    if (!confirm(`Zbanować użytkownika ${review.authorUsername}? Wszystkie jego recenzje i biblioteka zostaną usunięte.`)) return;
+    this.userService.deleteUser(review.authorId).subscribe(() => {
+      alert(`Użytkownik ${review.authorUsername} został zbanowany.`);
+      this.loadReviews(0);
+      if (this.game) this.reviewService.getStats(this.game.id).subscribe(s => this.stats = s);
+    });
+  }
+
+  canEditReview(review: ReviewResponse): boolean {
+    return this.isLoggedIn && review.authorUsername === this.currentUsername;
+  }
+
+  canDeleteReview(review: ReviewResponse): boolean {
+    return this.isAdmin || (this.isLoggedIn && review.authorUsername === this.currentUsername);
   }
 
   addToLibrary(status: LibraryStatus) {

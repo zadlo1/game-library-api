@@ -29,4 +29,8 @@ export class ReviewService {
   delete(id: number): Observable<void> {
     return this.http.delete<void>(`${this.API}/${id}`);
   }
+
+  deleteByAdmin(id: number): Observable<void> {
+    return this.http.delete<void>(`http://localhost:8080/api/admin/reviews/${id}`);
+  }
 }
