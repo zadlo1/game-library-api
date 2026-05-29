@@ -2,6 +2,8 @@ package pl.edu.pk.gamelibrary.game;
 
 import jakarta.persistence.criteria.Join;
 import org.springframework.data.jpa.domain.Specification;
+import pl.edu.pk.gamelibrary.genre.Genre;
+import pl.edu.pk.gamelibrary.platform.Platform;
 
 public final class GameSpecifications {
     private GameSpecifications() {}
@@ -16,14 +18,14 @@ public final class GameSpecifications {
         }
         if (c.getGenre() != null && !c.getGenre().isBlank()) {
             spec = spec.and((root, q, cb) -> {
-                Join<Game, String> genresJoin = root.join("genres");
-                return cb.equal(cb.lower(genresJoin), c.getGenre().trim().toLowerCase());
+                Join<Game, Genre> genresJoin = root.join("genres");
+                return cb.equal(cb.lower(genresJoin.get("name")), c.getGenre().trim().toLowerCase());
             });
         }
         if (c.getPlatform() != null && !c.getPlatform().isBlank()) {
             spec = spec.and((root, q, cb) -> {
-                Join<Game, String> platformsJoin = root.join("platforms");
-                return cb.equal(cb.lower(platformsJoin), c.getPlatform().trim().toLowerCase());
+                Join<Game, Platform> platformsJoin = root.join("platforms");
+                return cb.equal(cb.lower(platformsJoin.get("name")), c.getPlatform().trim().toLowerCase());
             });
         }
         if (c.getHasStory() != null) {
@@ -38,4 +40,3 @@ public final class GameSpecifications {
         return spec;
     }
 }
-

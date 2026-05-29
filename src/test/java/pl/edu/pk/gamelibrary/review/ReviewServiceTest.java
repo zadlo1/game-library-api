@@ -13,6 +13,8 @@ import pl.edu.pk.gamelibrary.auth.repository.UserRepository;
 import pl.edu.pk.gamelibrary.exception.ResourceNotFoundException;
 import pl.edu.pk.gamelibrary.game.Game;
 import pl.edu.pk.gamelibrary.game.GameRepository;
+import pl.edu.pk.gamelibrary.genre.Genre;
+import pl.edu.pk.gamelibrary.platform.Platform;
 import pl.edu.pk.gamelibrary.review.dto.ReviewRequest;
 import pl.edu.pk.gamelibrary.review.dto.GameRatingStatsResponse;
 
@@ -142,7 +144,7 @@ class ReviewServiceTest {
         @DisplayName("tworzy recenzję i zwraca zapisany obiekt")
         void createReview_shouldSaveAndReturnReview() {
             // given
-            Game game     = buildGame(1L, "Dark Souls");
+            Game game      = buildGame(1L, "Dark Souls");
             AppUser author = buildUser(10L, "gracze123");
             ReviewRequest req = buildRequest(1L, 8, 7, 9, 6, 8);
 
@@ -202,7 +204,7 @@ class ReviewServiceTest {
         @DisplayName("rzuca IllegalArgumentException gdy użytkownik już wystawił recenzję tej gry")
         void createReview_shouldThrow_whenDuplicateReview() {
             // given
-            Game game     = buildGame(1L, "Hades");
+            Game game      = buildGame(1L, "Hades");
             AppUser author = buildUser(10L, "ktoś");
             ReviewRequest req = buildRequest(1L, 8, 8, 8, 8, 8);
 
@@ -224,7 +226,7 @@ class ReviewServiceTest {
         @DisplayName("rzuca IllegalArgumentException gdy gameplayScore == 0 (poza zakresem)")
         void createReview_shouldThrow_whenGameplayScoreIsZero() {
             // given
-            Game game     = buildGame(1L, "Celeste");
+            Game game      = buildGame(1L, "Celeste");
             AppUser author = buildUser(10L, "ktoś");
             ReviewRequest req = buildRequest(1L, 0, 8, 8, 8, 8); // gameplay=0 – niedozwolone
 
@@ -246,7 +248,7 @@ class ReviewServiceTest {
         @DisplayName("rzuca IllegalArgumentException gdy graphicsScore == 11 (poza zakresem)")
         void createReview_shouldThrow_whenGraphicsScoreExceedsMax() {
             // given
-            Game game     = buildGame(1L, "RDR2");
+            Game game      = buildGame(1L, "RDR2");
             AppUser author = buildUser(10L, "ktoś");
             ReviewRequest req = buildRequest(1L, 8, 11, 8, 8, 8); // graphics=11 – niedozwolone
 
@@ -461,8 +463,8 @@ class ReviewServiceTest {
             // given
             when(gameRepository.existsById(1L)).thenReturn(true);
 
-            Review r1 = buildReview(buildGame(1L, "G1"), buildUser(10L, "u1"), 10, 10, 10, 10, 10); // overall ~10
-            Review r2 = buildReview(buildGame(1L, "G1"), buildUser(11L, "u2"), 8, 8, 8, 8, 8);       // overall ~8
+            Review r1 = buildReview(buildGame(1L, "G1"), buildUser(10L, "u1"), 10, 10, 10, 10, 10);
+            Review r2 = buildReview(buildGame(1L, "G1"), buildUser(11L, "u2"), 8, 8, 8, 8, 8);
             when(reviewRepository.findByGameId(1L)).thenReturn(List.of(r1, r2));
 
             // when
@@ -499,7 +501,12 @@ class ReviewServiceTest {
     // ──────────────────────────────────────────────
 
     private static Game buildGame(Long id, String title) {
-        Game g = new Game(title, "opis", List.of("RPG"), List.of("PC"), 2020, null);
+        Game g = new Game();
+        g.setTitle(title);
+        g.setDescription("opis");
+        g.setGenres(List.of(new Genre("RPG")));
+        g.setPlatforms(List.of(new Platform("PC")));
+        g.setReleaseYear(2020);
         setGameId(g, id);
         return g;
     }

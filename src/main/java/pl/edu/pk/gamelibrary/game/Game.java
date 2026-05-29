@@ -1,6 +1,8 @@
 package pl.edu.pk.gamelibrary.game;
 
 import jakarta.persistence.*;
+import pl.edu.pk.gamelibrary.genre.Genre;
+import pl.edu.pk.gamelibrary.platform.Platform;
 import pl.edu.pk.gamelibrary.review.RatingProfile;
 
 import java.util.ArrayList;
@@ -16,50 +18,34 @@ public class Game {
 
     private String title;
     private String description;
-    
-    @ElementCollection
-    @CollectionTable(name = "game_genres", joinColumns = @JoinColumn(name = "game_id"))
-    @Column(name = "genre")
-    private List<String> genres = new ArrayList<>();
-    
-    @ElementCollection
-    @CollectionTable(name = "game_platforms", joinColumns = @JoinColumn(name = "game_id"))
-    @Column(name = "platform")
-    private List<String> platforms = new ArrayList<>();
-    
+
+    @ManyToMany
+    @JoinTable(
+        name = "game_genres",
+        joinColumns = @JoinColumn(name = "game_id"),
+        inverseJoinColumns = @JoinColumn(name = "genre_id")
+    )
+    private List<Genre> genres = new ArrayList<>();
+
+    @ManyToMany
+    @JoinTable(
+        name = "game_platforms",
+        joinColumns = @JoinColumn(name = "game_id"),
+        inverseJoinColumns = @JoinColumn(name = "platform_id")
+    )
+    private List<Platform> platforms = new ArrayList<>();
+
     private Integer releaseYear;
     private String coverUrl;
 
-    /** Czy gra ma sensownie ocenialną fabułę/narrację (true dla narracyjnych). */
     @Column(nullable = false)
     private boolean hasStory = true;
 
-    /** Domyślny profil oceniania dla recenzji tej gry. */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private RatingProfile defaultRatingProfile = RatingProfile.DEFAULT;
 
     public Game() {}
-
-    public Game(String title, String description, List<String> genres, List<String> platforms,
-                Integer releaseYear, String coverUrl) {
-        this.title = title;
-        this.description = description;
-        this.genres = genres != null ? genres : new ArrayList<>();
-        this.platforms = platforms != null ? platforms : new ArrayList<>();
-        this.releaseYear = releaseYear;
-        this.coverUrl = coverUrl;
-    }
-
-    public Game(String title, String description, List<String> genres, List<String> platforms,
-                Integer releaseYear, String coverUrl,
-                boolean hasStory, RatingProfile defaultRatingProfile) {
-        this(title, description, genres, platforms, releaseYear, coverUrl);
-        this.hasStory = hasStory;
-        if (defaultRatingProfile != null) {
-            this.defaultRatingProfile = defaultRatingProfile;
-        }
-    }
 
     public Long getId() { return id; }
 
@@ -69,11 +55,11 @@ public class Game {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
 
-    public List<String> getGenres() { return genres; }
-    public void setGenres(List<String> genres) { this.genres = genres != null ? genres : new ArrayList<>(); }
+    public List<Genre> getGenres() { return genres; }
+    public void setGenres(List<Genre> genres) { this.genres = genres != null ? genres : new ArrayList<>(); }
 
-    public List<String> getPlatforms() { return platforms; }
-    public void setPlatforms(List<String> platforms) { this.platforms = platforms != null ? platforms : new ArrayList<>(); }
+    public List<Platform> getPlatforms() { return platforms; }
+    public void setPlatforms(List<Platform> platforms) { this.platforms = platforms != null ? platforms : new ArrayList<>(); }
 
     public Integer getReleaseYear() { return releaseYear; }
     public void setReleaseYear(Integer releaseYear) { this.releaseYear = releaseYear; }

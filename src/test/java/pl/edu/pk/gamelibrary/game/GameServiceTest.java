@@ -7,13 +7,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import pl.edu.pk.gamelibrary.events.listener.RatingStatsCache;
 import pl.edu.pk.gamelibrary.exception.ResourceNotFoundException;
+import pl.edu.pk.gamelibrary.game.dto.GameRequest;
+import pl.edu.pk.gamelibrary.genre.Genre;
+import pl.edu.pk.gamelibrary.genre.GenreRepository;
+import pl.edu.pk.gamelibrary.platform.Platform;
+import pl.edu.pk.gamelibrary.platform.PlatformRepository;
+import pl.edu.pk.gamelibrary.review.ReviewRepository;
 
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -30,11 +38,47 @@ class GameServiceTest {
 
     // ------------------------------------------------------------------ mocks
 
-    @Mock
-    private GameRepository gameRepository;
+    @Mock private GameRepository gameRepository;
+    @Mock private ReviewRepository reviewRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private RatingStatsCache ratingStatsCache;
+    @Mock private GenreRepository genreRepository;
+    @Mock private PlatformRepository platformRepository;
 
     @InjectMocks
     private GameService gameService;
+
+    // ------------------------------------------------------------------ helpers
+
+    /** Buduje prosty GameRequest z tytułem i wymaganymi polami. */
+    private GameRequest buildRequest(String title) {
+        GameRequest req = new GameRequest();
+        req.setTitle(title);
+        req.setDescription("opis");
+        req.setGenres(List.of("RPG"));
+        req.setPlatforms(List.of("PC"));
+        req.setReleaseYear(2020);
+        return req;
+    }
+
+    /** Stubuje GenreRepository i PlatformRepository – zwraca istniejące encje. */
+    private void stubResolvers() {
+        when(genreRepository.findByNameIgnoreCase(anyString()))
+                .thenAnswer(inv -> Optional.of(new Genre(inv.getArgument(0))));
+        when(platformRepository.findByNameIgnoreCase(anyString()))
+                .thenAnswer(inv -> Optional.of(new Platform(inv.getArgument(0))));
+    }
+
+    /** Ustawia prywatne pole {@code id} przez refleksję (brak publicznego settera). */
+    private static void setId(Game game, Long id) {
+        try {
+            var field = Game.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(game, id);
+        } catch (Exception e) {
+            throw new RuntimeException("Nie udało się ustawić id przez refleksję", e);
+        }
+    }
 
     // ============================================================ getGameById
 
@@ -49,8 +93,12 @@ class GameServiceTest {
         @DisplayName("zwraca grę gdy findById(1L) ją znajdzie")
         void getGameById_shouldReturnGame_whenFound() {
             // given
-            Game mockGame = new Game("The Witcher 3", "RPG z otwartym światem",
-                    List.of("RPG"), List.of("PC"), 2015, null);
+            Game mockGame = new Game();
+            mockGame.setTitle("The Witcher 3");
+            mockGame.setReleaseYear(2015);
+            mockGame.setGenres(List.of(new Genre("RPG")));
+            mockGame.setPlatforms(List.of(new Platform("PC")));
+
             when(gameRepository.findById(1L)).thenReturn(Optional.of(mockGame));
 
             // when
@@ -60,8 +108,9 @@ class GameServiceTest {
             assertNotNull(result, "Zwrócona gra nie powinna być null");
             assertEquals("The Witcher 3", result.getTitle(),
                     "Tytuł gry powinien być 'The Witcher 3'");
-            assertEquals(List.of("RPG"), result.getGenres());
             assertEquals(2015, result.getReleaseYear());
+            assertEquals(1, result.getGenres().size());
+            assertEquals("RPG", result.getGenres().get(0).getName());
 
             verify(gameRepository, times(1)).findById(1L);
         }
@@ -102,11 +151,13 @@ class GameServiceTest {
         @DisplayName("zwraca listę wszystkich gier z repozytorium")
         void getAllGames_shouldReturnListFromRepository() {
             // given
-            List<Game> games = List.of(
-                    new Game("Game A", "opis A", List.of("RPG"), List.of("PC"), 2020, null),
-                    new Game("Game B", "opis B", List.of("FPS"), List.of("PS5"), 2021, null)
-            );
-            when(gameRepository.findAll()).thenReturn(games);
+            Game gameA = new Game();
+            gameA.setTitle("Game A");
+
+            Game gameB = new Game();
+            gameB.setTitle("Game B");
+
+            when(gameRepository.findAll()).thenReturn(List.of(gameA, gameB));
 
             // when
             List<Game> result = gameService.getAllGames();
@@ -133,13 +184,18 @@ class GameServiceTest {
         @DisplayName("zapisuje grę i zwraca ją z nadanym id")
         void createGame_shouldReturnSavedGameWithId() {
             // given
-            Game input = new Game("Cyberpunk 2077", "RPG przyszłości", List.of("RPG"), List.of("PC"), 2020, null);
-            Game saved = new Game("Cyberpunk 2077", "RPG przyszłości", List.of("RPG"), List.of("PC"), 2020, null);
+            stubResolvers();
+
+            GameRequest request = buildRequest("Cyberpunk 2077");
+
+            Game saved = new Game();
+            saved.setTitle("Cyberpunk 2077");
             setId(saved, 42L);
+
             when(gameRepository.save(any(Game.class))).thenReturn(saved);
 
             // when
-            Game result = gameService.createGame(input);
+            Game result = gameService.createGame(request);
 
             // then
             assertNotNull(result.getId(), "Zwrócona gra powinna mieć nadane id");
@@ -156,17 +212,16 @@ class GameServiceTest {
         @DisplayName("rzuca IllegalArgumentException gdy title jest null")
         void createGame_shouldThrow_whenTitleIsNull() {
             // given
-            Game game = new Game(null, "opis", List.of("RPG"), List.of("PC"), 2020, null);
+            GameRequest request = buildRequest(null);
 
             // when / then
             IllegalArgumentException ex = assertThrows(
                     IllegalArgumentException.class,
-                    () -> gameService.createGame(game),
+                    () -> gameService.createGame(request),
                     "Powinien zostać rzucony IllegalArgumentException gdy title == null"
             );
 
             assertNotNull(ex.getMessage(), "Wyjątek powinien mieć komunikat");
-            // repozytorium NIE powinno być wywołane – walidacja blokuje zapis
             verify(gameRepository, never()).save(any());
         }
 
@@ -177,12 +232,12 @@ class GameServiceTest {
         @DisplayName("rzuca IllegalArgumentException gdy title jest pustym / białym stringiem")
         void createGame_shouldThrow_whenTitleIsBlank() {
             // given
-            Game game = new Game("   ", "opis", List.of("RPG"), List.of("PC"), 2020, null);
+            GameRequest request = buildRequest("   ");
 
             // when / then
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> gameService.createGame(game),
+                    () -> gameService.createGame(request),
                     "Powinien zostać rzucony IllegalArgumentException gdy title jest pusty"
             );
 
@@ -196,12 +251,12 @@ class GameServiceTest {
         @DisplayName("rzuca IllegalArgumentException gdy title jest pustym stringiem \"\"")
         void createGame_shouldThrow_whenTitleIsEmptyString() {
             // given
-            Game game = new Game("", "opis", List.of("RPG"), List.of("PC"), 2020, null);
+            GameRequest request = buildRequest("");
 
             // when / then
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> gameService.createGame(game),
+                    () -> gameService.createGame(request),
                     "Powinien zostać rzucony IllegalArgumentException gdy title == \"\""
             );
 
@@ -222,23 +277,36 @@ class GameServiceTest {
         @DisplayName("aktualizuje i zwraca grę gdy id istnieje")
         void updateGame_shouldUpdateAndReturnGame_whenFound() {
             // given
-            Game existing = new Game("Stary Tytuł", "stary opis", List.of("RPG"), List.of("PC"), 2010, null);
+            stubResolvers();
+
+            Game existing = new Game();
+            existing.setTitle("Stary Tytuł");
+            existing.setDescription("stary opis");
             setId(existing, 1L);
-            Game updated = new Game("Nowy Tytuł", "nowy opis", List.of("FPS"), List.of("PS5"), 2022, "http://cover.jpg");
+
+            GameRequest request = new GameRequest();
+            request.setTitle("Nowy Tytuł");
+            request.setDescription("nowy opis");
+            request.setGenres(List.of("FPS"));
+            request.setPlatforms(List.of("PS5"));
+            request.setReleaseYear(2022);
+            request.setCoverUrl("http://cover.jpg");
 
             when(gameRepository.findById(1L)).thenReturn(Optional.of(existing));
             when(gameRepository.save(any(Game.class))).thenAnswer(inv -> inv.getArgument(0));
 
             // when
-            Game result = gameService.updateGame(1L, updated);
+            Game result = gameService.updateGame(1L, request);
 
             // then
             assertEquals("Nowy Tytuł", result.getTitle());
             assertEquals("nowy opis", result.getDescription());
-            assertEquals(List.of("FPS"), result.getGenres());
-            assertEquals(List.of("PS5"), result.getPlatforms());
             assertEquals(2022, result.getReleaseYear());
             assertEquals("http://cover.jpg", result.getCoverUrl());
+            assertEquals(1, result.getGenres().size());
+            assertEquals("FPS", result.getGenres().get(0).getName());
+            assertEquals(1, result.getPlatforms().size());
+            assertEquals("PS5", result.getPlatforms().get(0).getName());
 
             verify(gameRepository, times(1)).findById(1L);
             verify(gameRepository, times(1)).save(existing);
@@ -252,12 +320,12 @@ class GameServiceTest {
         void updateGame_shouldThrow_whenNotFound() {
             // given
             when(gameRepository.findById(99L)).thenReturn(Optional.empty());
-            Game updated = new Game("Tytuł", "opis", List.of("RPG"), List.of("PC"), 2020, null);
+            GameRequest request = buildRequest("Tytuł");
 
             // when / then
             assertThrows(
                     ResourceNotFoundException.class,
-                    () -> gameService.updateGame(99L, updated),
+                    () -> gameService.updateGame(99L, request),
                     "Powinien zostać rzucony ResourceNotFoundException"
             );
 
@@ -278,8 +346,10 @@ class GameServiceTest {
         @DisplayName("usuwa grę gdy istnieje")
         void deleteGame_shouldDelete_whenFound() {
             // given
-            Game mockGame = new Game("Dark Souls", "Trudne RPG", List.of("RPG"), List.of("PC"), 2011, null);
+            Game mockGame = new Game();
+            mockGame.setTitle("Dark Souls");
             setId(mockGame, 1L);
+
             when(gameRepository.findById(1L)).thenReturn(Optional.of(mockGame));
 
             // when / then
@@ -305,21 +375,7 @@ class GameServiceTest {
                     "Powinien zostać rzucony ResourceNotFoundException"
             );
 
-            // deleteById NIE powinno być wywołane
             verify(gameRepository, never()).deleteById(any());
-        }
-    }
-
-    // ------------------------------------------------------------------ helper
-
-    /** Ustawia prywatne pole {@code id} przez refleksję (brak publicznego settera). */
-    private static void setId(Game game, Long id) {
-        try {
-            var field = Game.class.getDeclaredField("id");
-            field.setAccessible(true);
-            field.set(game, id);
-        } catch (Exception e) {
-            throw new RuntimeException("Nie udało się ustawić id przez refleksję", e);
         }
     }
 }

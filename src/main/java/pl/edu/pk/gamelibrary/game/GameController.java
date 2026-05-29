@@ -101,9 +101,7 @@ public class GameController {
     })
     @PostMapping
     public ResponseEntity<GameResponse> create(@Valid @RequestBody GameRequest request) {
-        GameResponse response = GameMapper.toResponse(
-                gameService.createGame(GameMapper.toEntity(request))
-        );
+        GameResponse response = GameMapper.toResponse(gameService.createGame(request));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -116,9 +114,7 @@ public class GameController {
     })
     @PutMapping("/{id}")
     public GameResponse update(@PathVariable Long id, @Valid @RequestBody GameRequest request) {
-        return GameMapper.toResponse(
-                gameService.updateGame(id, GameMapper.toEntity(request))
-        );
+        return GameMapper.toResponse(gameService.updateGame(id, request));
     }
 
     @Operation(summary = "Usuń grę", description = "Wymaga roli **ADMIN**.",
@@ -142,7 +138,6 @@ public class GameController {
         String field = parts[0].trim();
         String dir = parts.length > 1 ? parts[1].trim() : "asc";
         Sort.Direction direction = "desc".equalsIgnoreCase(dir) ? Sort.Direction.DESC : Sort.Direction.ASC;
-        // "rating" nie jest polem JPA — GameService obsłuży to osobno; przekazujemy Sort żeby wiedzieć kierunek
         return Sort.by(direction, field);
     }
 }

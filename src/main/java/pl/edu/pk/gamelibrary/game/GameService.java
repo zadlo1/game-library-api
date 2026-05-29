@@ -11,6 +11,11 @@ import org.springframework.stereotype.Service;
 import pl.edu.pk.gamelibrary.events.GameDeletedEvent;
 import pl.edu.pk.gamelibrary.events.listener.RatingStatsCache;
 import pl.edu.pk.gamelibrary.exception.ResourceNotFoundException;
+import pl.edu.pk.gamelibrary.genre.Genre;
+import pl.edu.pk.gamelibrary.genre.GenreRepository;
+import pl.edu.pk.gamelibrary.game.dto.GameRequest;
+import pl.edu.pk.gamelibrary.platform.Platform;
+import pl.edu.pk.gamelibrary.platform.PlatformRepository;
 import pl.edu.pk.gamelibrary.review.RatingProfile;
 import pl.edu.pk.gamelibrary.review.ReviewRepository;
 
@@ -26,30 +31,30 @@ public class GameService {
     private final ReviewRepository reviewRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final RatingStatsCache ratingStatsCache;
+    private final GenreRepository genreRepository;
+    private final PlatformRepository platformRepository;
 
-    // Bayesian average parameters:
-    // C = prior count (confidence), M = prior mean (global prior)
     private static final double BAYES_C = 5.0;
     private static final double BAYES_M = 7.0;
 
     public GameService(GameRepository gameRepository,
                        ReviewRepository reviewRepository,
                        ApplicationEventPublisher eventPublisher,
-                       RatingStatsCache ratingStatsCache) {
+                       RatingStatsCache ratingStatsCache,
+                       GenreRepository genreRepository,
+                       PlatformRepository platformRepository) {
         this.gameRepository = gameRepository;
         this.reviewRepository = reviewRepository;
         this.eventPublisher = eventPublisher;
         this.ratingStatsCache = ratingStatsCache;
+        this.genreRepository = genreRepository;
+        this.platformRepository = platformRepository;
     }
 
     public List<Game> getAllGames() {
         return gameRepository.findAll();
     }
 
-    /**
-     * Wyszukuje gry z filtrowaniem i paginacją.
-     * Gdy sort = "rating,asc" lub "rating,desc" stosuje Bayesian average w Javie.
-     */
     public Page<Game> searchGames(GameSearchCriteria criteria, Pageable pageable) {
         String sortField = extractSortField(pageable);
         if ("rating".equalsIgnoreCase(sortField)) {
@@ -58,10 +63,6 @@ public class GameService {
         return gameRepository.findAll(GameSpecifications.byCriteria(criteria), pageable);
     }
 
-    /**
-     * Pobiera mapę gameId -> GameRatingStats dla wszystkich gier.
-     * Wynik jest cachowany w RatingStatsCache i unieważniany przez eventy recenzji.
-     */
     public Map<Long, GameRatingStats> getAllRatingStats() {
         List<Object[]> rows = reviewRepository.findReviewStatsPerGame();
         Map<Long, GameRatingStats> map = new HashMap<>();
@@ -78,7 +79,6 @@ public class GameService {
     }
 
     public GameRatingStats getRatingStatsForGame(Long gameId) {
-        // Sprawdź cache przed pójściem do bazy
         return ratingStatsCache.get(gameId).orElseGet(() -> {
             Map<Long, GameRatingStats> all = getAllRatingStats();
             return all.getOrDefault(gameId, GameRatingStats.empty());
@@ -90,41 +90,65 @@ public class GameService {
                 .orElseThrow(() -> new ResourceNotFoundException("Gra", id));
     }
 
-    public Game createGame(Game game) {
-        if (game.getTitle() == null || game.getTitle().isBlank()) {
-            throw new IllegalArgumentException("Tytuł gry nie może być null ani pusty");
+    @Transactional
+    public Game createGame(GameRequest request) {
+        Game game = new Game();
+        game.setTitle(request.getTitle());
+        game.setDescription(request.getDescription());
+        game.setReleaseYear(request.getReleaseYear());
+        game.setCoverUrl(request.getCoverUrl());
+        if (request.getHasStory() != null) {
+            game.setHasStory(request.getHasStory());
         }
-        if (game.getDefaultRatingProfile() == null) {
-            game.setDefaultRatingProfile(RatingProfile.DEFAULT);
-        }
+        game.setDefaultRatingProfile(
+            request.getDefaultRatingProfile() != null ? request.getDefaultRatingProfile() : RatingProfile.DEFAULT
+        );
+        game.setGenres(resolveGenres(request.getGenres()));
+        game.setPlatforms(resolvePlatforms(request.getPlatforms()));
         return gameRepository.save(game);
     }
 
-    public Game updateGame(Long id, Game updated) {
+    @Transactional
+    public Game updateGame(Long id, GameRequest request) {
         Game existing = getGameById(id);
-        existing.setTitle(updated.getTitle());
-        existing.setDescription(updated.getDescription());
-        existing.setGenres(updated.getGenres());
-        existing.setPlatforms(updated.getPlatforms());
-        existing.setReleaseYear(updated.getReleaseYear());
-        existing.setCoverUrl(updated.getCoverUrl());
-        existing.setHasStory(updated.isHasStory());
-        existing.setDefaultRatingProfile(updated.getDefaultRatingProfile());
+        existing.setTitle(request.getTitle());
+        existing.setDescription(request.getDescription());
+        existing.setReleaseYear(request.getReleaseYear());
+        existing.setCoverUrl(request.getCoverUrl());
+        existing.setHasStory(request.getHasStory() != null ? request.getHasStory() : existing.isHasStory());
+        existing.setDefaultRatingProfile(
+            request.getDefaultRatingProfile() != null ? request.getDefaultRatingProfile() : existing.getDefaultRatingProfile()
+        );
+        existing.setGenres(resolveGenres(request.getGenres()));
+        existing.setPlatforms(resolvePlatforms(request.getPlatforms()));
         return gameRepository.save(existing);
     }
 
-    /**
-     * Usuwa grę i publikuje GameDeletedEvent.
-     *
-     * Czyszczenie powiązanych recenzji i wpisów w bibliotekach
-     * odbywa się w GameEventListener (BEFORE_COMMIT) — w tej samej
-     * transakcji, więc albo wszystko się wykona, albo nic.
-     */
     @Transactional
     public void deleteGame(Long id) {
         Game game = getGameById(id);
         eventPublisher.publishEvent(new GameDeletedEvent(game.getId(), game.getTitle()));
         gameRepository.deleteById(id);
+    }
+
+    // ──────────────────────────────────────────────
+    // Helpers: resolve genre/platform names to entities (create if not exists)
+    // ──────────────────────────────────────────────
+
+    private List<Genre> resolveGenres(List<String> names) {
+        if (names == null) return List.of();
+        return names.stream().map(name ->
+            genreRepository.findByNameIgnoreCase(name.trim())
+                .orElseGet(() -> genreRepository.save(new Genre(name.trim())))
+        ).toList();
+    }
+
+    private List<Platform> resolvePlatforms(List<String> names) {
+        if (names == null) return List.of();
+        return names.stream().map(name ->
+            platformRepository.findByNameIgnoreCase(name.trim())
+                .orElseGet(() -> platformRepository.save(new Platform(name.trim())))
+        ).toList();
     }
 
     // ──────────────────────────────────────────────
@@ -164,11 +188,6 @@ public class GameService {
         return new PageImpl<>(pageContent, pageable, totalElements);
     }
 
-    // ──────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────
-
-    /** Bayesian average: (C*M + n*avg) / (C + n) */
     private static double computeBayesian(long n, double avg) {
         return (BAYES_C * BAYES_M + n * avg) / (BAYES_C + n);
     }
