@@ -1,8 +1,11 @@
 # 🎮 game-library-api
 
-REST API do zarządzania biblioteką gier — projekt zaliczeniowy z przedmiotu **Zaawansowane Technologie Programowania Aplikacji Internetowych** (ZTPAI, semestr letni 2025/2026).
+REST API do zarządzania biblioteką gier — projekt zaliczeniowy z przedmiotu **Zaawansowane Technologie Programowania
+Aplikacji Internetowych** (ZTPAI, semestr letni 2025/2026).
 
-Aplikacja umożliwia przeglądanie i zarządzanie kolekcją gier z podziałem na role: użytkownicy mogą przeglądać katalog, dodawać recenzje i prowadzić własną bibliotekę, administratorzy mogą zarządzać katalogiem. Dostęp chroniony jest tokenami JWT.
+Aplikacja umożliwia przeglądanie i zarządzanie kolekcją gier z podziałem na role: użytkownicy mogą przeglądać katalog,
+dodawać recenzje i prowadzić własną bibliotekę, administratorzy mogą zarządzać katalogiem. Dostęp chroniony jest
+tokenami JWT.
 
 ---
 
@@ -11,7 +14,7 @@ Aplikacja umożliwia przeglądanie i zarządzanie kolekcją gier z podziałem na
 | Warstwa     | Technologia                                               |
 |-------------|-----------------------------------------------------------|
 | Backend     | Java 17, Spring Boot 3.4.4                                |
-| Persistence | Spring Data JPA, H2 (in-memory)                           |
+| Persistence | Spring Data JPA, PostgreSQL 16                            |
 | Security    | Spring Security, JWT (JJWT 0.12.6)                        |
 | Eventy      | Spring Application Events (`@TransactionalEventListener`) |
 | Walidacja   | Jakarta Validation                                        |
@@ -27,8 +30,29 @@ Aplikacja umożliwia przeglądanie i zarządzanie kolekcją gier z podziałem na
 
 - **Java 17+**
 - **Maven 3.8+** (lub użyj dołączonego `./mvnw`)
+- **PostgreSQL 16** (lub nowszy)
+- **Node.js** (opcjonalnie, Maven automatycznie pobierze)
 
-### Kroki
+### Konfiguracja bazy danych
+
+1. Uruchom PostgreSQL i utwórz bazę danych:
+
+```sql
+CREATE
+DATABASE gamelibrary;
+```
+
+2. Skonfiguruj połączenie w `src/main/resources/application.properties`:
+
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5433/gamelibrary
+spring.datasource.username=postgres
+spring.datasource.password=postgres
+```
+
+> Baza danych działa na porcie **5433** (nie standardowym 5432). Dostosuj port/użytkownika/hasło do swojej konfiguracji.
+
+### Uruchomienie
 
 ```bash
 # Sklonuj repozytorium
@@ -44,18 +68,18 @@ cd game-library-api
 > ⏳ Pierwsze uruchomienie trwa dłużej — Maven automatycznie pobiera Node.js i buduje Angular.
 
 Po uruchomieniu:
+
 - **Frontend:** `http://localhost:8080`
 - **API:** `http://localhost:8080/api`
 - **Swagger UI:** `http://localhost:8080/swagger-ui/index.html`
-- **H2 Console:** `http://localhost:8080/h2-console`
 
-### Konsola H2 (baza danych)
+### Dane testowe
 
-Dostępna w trybie deweloperskim pod adresem: `http://localhost:8080/h2-console`
+Aplikacja automatycznie ładuje dane testowe przy starcie (`data.sql`):
 
-- **JDBC URL:** `jdbc:h2:mem:gamelibrary`
-- **User:** `sa`
-- **Password:** *(puste)*
+- **Admin:** `admin` / `admin123`
+- **Użytkownik:** `user` / `user123`
+- **Przykładowe gry z gatunkami i platformami**
 
 ---
 
@@ -63,13 +87,13 @@ Dostępna w trybie deweloperskim pod adresem: `http://localhost:8080/h2-console`
 
 Każda recenzja składa się z pięciu kryteriów ocenianych w skali 1–10:
 
-| Kryterium     | Waga (DEFAULT) | Opis                                          |
-|---------------|---------------|-----------------------------------------------|
-| Rozgrywka     | 30%           | Mechaniki, sterowanie, satysfakcja z gry      |
-| Grafika       | 20%           | Oprawa wizualna, efekty, design poziomów      |
-| Dźwięk        | 15%           | Muzyka, efekty dźwiękowe, dubbing             |
-| Fabuła        | 20%           | Narracja, postacie, scenariusz (opcjonalne)   |
-| Regrywalność  | 15%           | Zawartość, tryby gry, wartość za cenę         |
+| Kryterium    | Waga (DEFAULT) | Opis                                        |
+|--------------|----------------|---------------------------------------------|
+| Rozgrywka    | 30%            | Mechaniki, sterowanie, satysfakcja z gry    |
+| Grafika      | 20%            | Oprawa wizualna, efekty, design poziomów    |
+| Dźwięk       | 15%            | Muzyka, efekty dźwiękowe, dubbing           |
+| Fabuła       | 20%            | Narracja, postacie, scenariusz (opcjonalne) |
+| Regrywalność | 15%            | Zawartość, tryby gry, wartość za cenę       |
 
 Ocena ogólna recenzji jest wyliczana automatycznie jako ważona średnia kryteriów.
 
@@ -82,13 +106,15 @@ Oprócz profilu domyślnego (`DEFAULT`) dostępne są dwa dodatkowe profile z in
 
 ### Bayesian rating
 
-Gry w katalogu są sortowane po ocenie z użyciem **Bayesian average**, który uwzględnia liczbę recenzji i chroni przed zawyżaniem ocen gier z małą ich liczbą:
+Gry w katalogu są sortowane po ocenie z użyciem **Bayesian average**, który uwzględnia liczbę recenzji i chroni przed
+zawyżaniem ocen gier z małą ich liczbą:
 
 ```
 bayesian = (C × M + n × avg) / (C + n)
 ```
 
-gdzie `C = 5` (prior count) i `M = 7.0` (prior mean). Sortowanie używa pełnej precyzji obliczonej wartości, a wyświetlana ocena jest zaokrąglona do jednego miejsca po przecinku.
+gdzie `C = 5` (prior count) i `M = 7.0` (prior mean). Sortowanie używa pełnej precyzji obliczonej wartości, a
+wyświetlana ocena jest zaokrąglona do jednego miejsca po przecinku.
 
 ---
 
@@ -105,6 +131,7 @@ gdzie `C = 5` (prior count) i `M = 7.0` (prior mean). Sortowanie używa pełnej 
 > To jest celowo zostawione na potrzeby developmentu/testów. W produkcji nie wolno na to pozwalać.
 
 **Przykład rejestracji:**
+
 ```http
 POST /api/auth/register
 Content-Type: application/json
@@ -117,6 +144,7 @@ Content-Type: application/json
 ```
 
 **Przykład logowania (odpowiedź):**
+
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiJ9..."
@@ -127,26 +155,28 @@ Content-Type: application/json
 
 > Odczyt jest publiczny. Zapis/edycja/usuwanie wymaga roli `ADMIN`.
 
-| Metoda | Endpoint          | Opis                     | Rola       |
-|--------|-------------------|--------------------------|------------|
-| GET    | `/api/games`      | Lista wszystkich gier    | Publiczny  |
-| GET    | `/api/games/{id}` | Szczegóły gry            | Publiczny  |
-| POST   | `/api/games`      | Dodaj nową grę           | ADMIN      |
-| PUT    | `/api/games/{id}` | Zaktualizuj grę          | ADMIN      |
-| DELETE | `/api/games/{id}` | Usuń grę                 | ADMIN      |
+| Metoda | Endpoint          | Opis                  | Rola      |
+|--------|-------------------|-----------------------|-----------|
+| GET    | `/api/games`      | Lista wszystkich gier | Publiczny |
+| GET    | `/api/games/{id}` | Szczegóły gry         | Publiczny |
+| POST   | `/api/games`      | Dodaj nową grę        | ADMIN     |
+| PUT    | `/api/games/{id}` | Zaktualizuj grę       | ADMIN     |
+| DELETE | `/api/games/{id}` | Usuń grę              | ADMIN     |
 
 **GET `/api/games` – query params (paginacja + filtrowanie + sortowanie):**
 
 - `page` (domyślnie `0`)
 - `size` (domyślnie `20`)
-- `sort` (domyślnie `title,asc`) – dostępne wartości: `title,asc`, `title,desc`, `releaseYear,asc`, `releaseYear,desc`, `rating,asc`, `rating,desc`
+- `sort` (domyślnie `title,asc`) – dostępne wartości: `title,asc`, `title,desc`, `releaseYear,asc`, `releaseYear,desc`,
+  `rating,asc`, `rating,desc`
 - `title` (opcjonalnie) – wyszukiwanie po tytule (contains, case-insensitive)
 - `genre` (opcjonalnie)
 - `platform` (opcjonalnie)
 - `releaseYearFrom` / `releaseYearTo` (opcjonalnie)
 - `hasStory` (opcjonalnie)
 
-> Sortowanie `rating,desc` / `rating,asc` używa Bayesian average obliczanego w pamięci po pobraniu wszystkich pasujących gier.
+> Sortowanie `rating,desc` / `rating,asc` używa Bayesian average obliczanego w pamięci po pobraniu wszystkich pasujących
+> gier.
 
 **Odpowiedź GET `/api/games` (PagedResponse):**
 
@@ -169,12 +199,19 @@ Content-Type: application/json
 ```
 
 **Przykład ciała zapytania (POST/PUT):**
+
 ```json
 {
   "title": "The Witcher 3",
   "description": "RPG z otwartym światem",
-  "genres": ["RPG", "Action"],
-  "platforms": ["PC", "PlayStation 5"],
+  "genres": [
+    "RPG",
+    "Action"
+  ],
+  "platforms": [
+    "PC",
+    "PlayStation 5"
+  ],
   "releaseYear": 2015,
   "coverUrl": "https://example.com/cover.jpg",
   "hasStory": true,
@@ -204,6 +241,7 @@ Content-Type: application/json
 - `sort` (domyślnie `createdAt,desc`) – np. `overallScore,desc`
 
 **Przykład ciała zapytania (POST/PUT):**
+
 ```json
 {
   "gameId": 1,
@@ -218,7 +256,8 @@ Content-Type: application/json
 }
 ```
 
-> `storyScore` może być pominięte (null) dla gier bez fabuły. Ocena ogólna jest wtedy liczona z pozostałych kryteriów z renormalizacją wag.
+> `storyScore` może być pominięte (null) dla gier bez fabuły. Ocena ogólna jest wtedy liczona z pozostałych kryteriów z
+> renormalizacją wag.
 
 ### Admin
 
@@ -267,31 +306,37 @@ Dostępne statusy: `PLAYING`, `COMPLETED`, `DROPPED`, `PLAN_TO_PLAY`, `ON_HOLD`.
 
 ---
 
-
 ## 📨 Architektura eventowa
 
-Aplikacja wykorzystuje Spring Application Events do luźnego wiązania modułów. Zamiast bezpośrednich zależności między serwisami, moduły komunikują się przez zdarzenia domenowe.
+Aplikacja wykorzystuje Spring Application Events do luźnego wiązania modułów. Zamiast bezpośrednich zależności między
+serwisami, moduły komunikują się przez zdarzenia domenowe.
 
 ### Zdarzenia domenowe
 
-| Zdarzenie             | Publikuje        | Nasłuchuje                         | Faza                  |
-|-----------------------|------------------|------------------------------------|-----------------------|
-| `GameDeletedEvent`    | `GameService`    | `GameEventListener`, `AuditEventListener` | `AFTER_COMMIT`  |
-| `ReviewCreatedEvent`  | `ReviewService`  | `ReviewEventListener`, `AuditEventListener` | `AFTER_COMMIT` |
-| `ReviewDeletedEvent`  | `ReviewService`  | `ReviewEventListener`, `AuditEventListener` | `AFTER_COMMIT` |
-| `UserRegisteredEvent` | `AuthService`    | `AuditEventListener`               | `AFTER_COMMIT`        |
+| Zdarzenie             | Publikuje       | Nasłuchuje                                  | Faza           |
+|-----------------------|-----------------|---------------------------------------------|----------------|
+| `GameDeletedEvent`    | `GameService`   | `GameEventListener`, `AuditEventListener`   | `AFTER_COMMIT` |
+| `ReviewCreatedEvent`  | `ReviewService` | `ReviewEventListener`, `AuditEventListener` | `AFTER_COMMIT` |
+| `ReviewDeletedEvent`  | `ReviewService` | `ReviewEventListener`, `AuditEventListener` | `AFTER_COMMIT` |
+| `UserRegisteredEvent` | `AuthService`   | `AuditEventListener`                        | `AFTER_COMMIT` |
 
 ### Listenery
 
-- **`GameEventListener`** — po usunięciu gry czyści powiązane recenzje i wpisy w bibliotekach użytkowników; używa `REQUIRES_NEW`, żeby działać w osobnej transakcji po commicie
+- **`GameEventListener`** — po usunięciu gry unieważnia cache statystyk ratingowych (recenzje i wpisy UserGame są
+  usuwane kaskadowo przez JPA)
 - **`ReviewEventListener`** — unieważnia cache statystyk ratingowych gdy recenzja zostaje dodana lub usunięta
 - **`AuditEventListener`** — centralny audit log; loguje każde zdarzenie domenowe (bez modyfikacji żadnego serwisu)
-- **`RatingStatsCache`** — prosty in-memory cache (`ConcurrentHashMap`) statystyk ratingowych per gra, unieważniany przez eventy
+- **`RatingStatsCache`** — prosty in-memory cache (`ConcurrentHashMap`) statystyk ratingowych per gra, unieważniany
+  przez eventy
 
-> **Dlaczego `AFTER_COMMIT` a nie `BEFORE_COMMIT`?**  
-> `BEFORE_COMMIT` oznacza, że listener wykonuje się zanim transakcja „nadrzędna" zostanie scommitowana.  
-> Cleanup powiązanych danych (recenzje, biblioteki) wymaga nowej transakcji — dlatego `AFTER_COMMIT` + `REQUIRES_NEW`.  
-> Spring od wersji 6.x zabrania używania `@Transactional` na metodzie `@TransactionalEventListener` z propagacją inną niż `REQUIRES_NEW` lub `NOT_SUPPORTED`.
+### Kaskadowe usuwanie
+
+Encje `Game` i `AppUser` mają skonfigurowane relacje `@OneToMany` z `CascadeType.ALL` i `orphanRemoval=true`:
+
+- Usunięcie **gry** automatycznie usuwa wszystkie powiązane **recenzje** i wpisy **UserGame** (biblioteki użytkowników)
+- Usunięcie **użytkownika** automatycznie usuwa wszystkie jego **recenzje** i wpisy **UserGame**
+
+To eliminuje problemy z naruszeniem kluczy obcych i upraszcza logikę aplikacji.
 
 ---
 
@@ -368,9 +413,28 @@ Projekt zawiera testy jednostkowe dla `GameService` (Mockito), `ReviewService` o
 
 ## ⚙️ Konfiguracja
 
-Główna konfiguracja w `src/main/resources/application.properties`.
+Główna konfiguracja w `src/main/resources/application.properties`:
 
-> ⚠️ **Przed wdrożeniem produkcyjnym** zmień `jwt.secret` na bezpieczny klucz co najmniej 256-bitowy i zastąp H2 bazą danych produkcyjną (np. PostgreSQL).
+```properties
+# Baza danych PostgreSQL
+spring.datasource.url=jdbc:postgresql://localhost:5433/gamelibrary
+spring.datasource.username=postgres
+spring.datasource.password=postgres
+
+# JPA
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.defer-datasource-initialization=true
+
+# JWT
+jwt.secret=your-very-long-and-secure-secret-key-at-least-256-bits-long-for-hs256
+jwt.expiration-ms=86400000
+
+# Swagger
+springdoc.swagger-ui.path=/swagger-ui.html
+```
+
+> ⚠️ **Przed wdrożeniem produkcyjnym** zmień `jwt.secret` na bezpieczny klucz i zabezpiecz dane dostępowe do bazy
+> danych.
 
 ---
 
@@ -398,3 +462,47 @@ ng serve
 - Dodawanie i edytowanie recenzji z oceną pięciu kryteriów
 - Zarządzanie grami (CRUD) — tylko ADMIN
 - Prywatna biblioteka użytkownika ze statusami i oznaczeniem ulubionych
+
+---
+
+## ✅ Weryfikacja wymagań projektu
+
+### Ocena 3.0 (Dostateczny) ✅
+
+- ✅ **Działający Spring Boot** — wersja 3.4.4, pełna konfiguracja
+- ✅ **Połączenie z bazą danych** — PostgreSQL 16
+- ✅ **CRUD dla 1 encji** — pełne CRUD dla `Game`, `Review`, `UserGame`
+- ✅ **Demo video** 
+
+### Ocena 4.0 (Dobry) ✅
+
+- ✅ **Struktura warstwowa** — Controller/Service/Repository/DTO we wszystkich modułach
+- ✅ **DTO + Walidacja** — `@Valid`, `@NotBlank`, `@Min/@Max` w request DTO
+- ✅ **Obsługa błędów** — `GlobalExceptionHandler` z `@ControllerAdvice`
+- ✅ **Security** — JWT z Spring Security, role USER/ADMIN
+
+### Ocena 5.0 (Bardzo dobry) ✅
+
+- ✅ **Unit Testy** — `GameServiceTest`, `ReviewServiceTest`, `RatingCalculatorTest`, `AuthServiceTest` (JUnit 5 +
+  Mockito)
+- ✅ **Events** — Spring Application Events z `@TransactionalEventListener` (4 typy eventów + 3 listenery)
+- ✅ **Czysty kod** — mapery, separacja warstw, JavaDoc, brak duplikacji
+- ✅ **Frontend** — Angular 17 z routing, guards, interceptors, reactive forms
+
+### Dodatkowe funkcjonalności 🚀
+
+- **Swagger/OpenAPI** — pełna dokumentacja API z interfejsem UI
+- **Zaawansowane filtrowanie** — wielokryterialne wyszukiwanie gier (JPA Specifications)
+- **Paginacja** — dla wszystkich list (games, reviews, library)
+- **Bayesian rating** — algorytm ranking gier z uwzględnieniem liczby recenzji
+- **Profile oceniania** — 3 różne profile wag dla kryteriów (DEFAULT, NARRATIVE, MULTIPLAYER)
+- **Cache statystyk** — in-memory cache dla wydajności (unieważniany przez eventy)
+- **Kaskadowe usuwanie** — automatyczne czyszczenie powiązanych danych
+- **Audit log** — centralne logowanie zdarzeń domenowych
+
+---
+
+## 📝 Autor
+
+**Bartłomiej Żądło**
+Politechnika Krakowska, ZTPAI 2025/2026
