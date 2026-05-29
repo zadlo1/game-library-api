@@ -1,6 +1,11 @@
 package pl.edu.pk.gamelibrary.auth.model;
 
 import jakarta.persistence.*;
+import pl.edu.pk.gamelibrary.library.UserGame;
+import pl.edu.pk.gamelibrary.review.Review;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "app_users")
@@ -19,6 +24,12 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
+
+    @OneToMany(mappedBy = "author", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Review> reviews = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<UserGame> userGames = new ArrayList<>();
 
     public AppUser() {}
 

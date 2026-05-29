@@ -2,8 +2,10 @@ package pl.edu.pk.gamelibrary.game;
 
 import jakarta.persistence.*;
 import pl.edu.pk.gamelibrary.genre.Genre;
+import pl.edu.pk.gamelibrary.library.UserGame;
 import pl.edu.pk.gamelibrary.platform.Platform;
 import pl.edu.pk.gamelibrary.review.RatingProfile;
+import pl.edu.pk.gamelibrary.review.Review;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +46,12 @@ public class Game {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private RatingProfile defaultRatingProfile = RatingProfile.DEFAULT;
+
+    @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Review> reviews = new ArrayList<>();
+
+    @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<UserGame> userGames = new ArrayList<>();
 
     public Game() {}
 
