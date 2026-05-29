@@ -263,9 +263,19 @@ Content-Type: application/json
 
 > Endpointy dostępne tylko dla roli `ADMIN`.
 
-| Metoda | Endpoint           | Opis                            |
-|--------|--------------------|---------------------------------|
-| POST   | `/api/admin/users` | Utwórz użytkownika (USER/ADMIN) |
+**Użytkownicy:**
+
+| Metoda | Endpoint                    | Opis                            |
+|--------|-----------------------------|---------------------------------|
+| GET    | `/api/admin/users`          | Lista wszystkich użytkowników   |
+| POST   | `/api/admin/users`          | Utwórz użytkownika (USER/ADMIN) |
+| DELETE | `/api/admin/users/{userId}` | Usuń użytkownika (ban)          |
+
+**Recenzje:**
+
+| Metoda | Endpoint                  | Opis                              |
+|--------|---------------------------|-----------------------------------|
+| DELETE | `/api/admin/reviews/{id}` | Usuń dowolną recenzję (np. spam)  |
 
 ### Biblioteka użytkownika
 
@@ -345,6 +355,9 @@ To eliminuje problemy z naruszeniem kluczy obcych i upraszcza logikę aplikacji.
 ```
 src/
 ├── main/java/pl/edu/pk/gamelibrary/
+│   ├── admin/
+│   │   ├── controller/   # AdminUserController, AdminReviewController
+│   │   └── dto/          # AdminCreateUserRequest, UserListResponse
 │   ├── auth/
 │   │   ├── controller/   # AuthController
 │   │   ├── dto/          # LoginRequest, RegisterRequest, AuthResponse
@@ -394,6 +407,7 @@ frontend/
     │   ├── guards/       # AuthGuard
     │   └── interceptors/ # AuthInterceptor (JWT)
     └── features/
+        ├── admin/        # AdminPanel (zarządzanie użytkownikami)
         ├── auth/         # Login, Register
         ├── games/        # GameList, GameDetail, GameForm
         └── library/      # LibraryList
@@ -461,6 +475,7 @@ ng serve
 - Rejestracja i logowanie (JWT)
 - Dodawanie i edytowanie recenzji z oceną pięciu kryteriów
 - Zarządzanie grami (CRUD) — tylko ADMIN
+- Panel administratora — lista użytkowników z możliwością banowania (usuwania kont)
 - Prywatna biblioteka użytkownika ze statusami i oznaczeniem ulubionych
 
 ---
